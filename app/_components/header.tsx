@@ -1,5 +1,5 @@
-import { Button } from "@/app/components/ui/button";
-import { Card, CardContent } from "@/app/components/ui/card";
+import { Button } from "@/app/_components/ui/button";
+import { Card, CardContent } from "@/app/_components/ui/card";
 import { MenuIcon } from "lucide-react";
 import Image from "next/image";
 
