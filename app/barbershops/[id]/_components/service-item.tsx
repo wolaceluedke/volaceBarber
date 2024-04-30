@@ -6,11 +6,13 @@ import { Card, CardContent } from "@/app/_components/ui/card";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/app/_components/ui/sheet";
 import { Barbershop, Service } from "@prisma/client";
 import { ptBR } from "date-fns/locale";
-import { signIn } from "next-auth/react";
+import { signIn, useSession } from "next-auth/react";
 import Image from "next/image";
 import { useMemo, useState } from "react";
 import { generateDayTimeList } from "../_helpers/hours";
-import { format } from "date-fns";
+import { format, setHours, setMinutes } from "date-fns";
+import { saveBooking } from "../_actions/save-booking";
+import { Loader2 } from "lucide-react";
 
 interface ServiceItemProps {
   barbershop: Barbershop;
@@ -18,26 +20,52 @@ interface ServiceItemProps {
   isAuthenticated: boolean;
 }
 
-const ServiceItem = ({ service, isAuthenticated, barbershop }: ServiceItemProps) => {
+const ServiceItem = ({ service, barbershop, isAuthenticated }: ServiceItemProps) => {
+  const { data } = useSession();
 
-  const [date, setDate] = useState<Date | undefined>(undefined)
-  const [hour, setHour] = useState<string | undefined>()
+  const [date, setDate] = useState<Date | undefined>(undefined);
+  const [hour, setHour] = useState<string | undefined>();
+  const [submitIsLoading, setSubmitIsLoading] = useState(false);
 
   const handleDateClick = (date: Date | undefined) => {
     setDate(date);
-    setHour(undefined)
-  }
+    setHour(undefined);
+  };
 
   const handleHourClick = (time: string) => {
-    setHour(time)
-  }
+    setHour(time);
+  };
 
   const handleBookingClick = () => {
     if (!isAuthenticated) {
       return signIn("google");
     }
+  };
 
-    // TODO: abrir modal de agendamento
+  const handleBookingSubmit = async () => {
+    setSubmitIsLoading(true);
+
+    try {
+      if (!hour || !date || !data?.user) {
+        return;
+      }
+
+      const dateHour = Number(hour.split(":")[0]);
+      const dateMinutes = Number(hour.split(":")[1]);
+
+      const newDate = setMinutes(setHours(date, dateHour), dateMinutes);
+
+      await saveBooking({
+        serviceId: service.id,
+        barbershopId: barbershop.id,
+        date: newDate,
+        userId: (data.user as any).id,
+      });
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setSubmitIsLoading(false);
+    }
   };
 
   const timeList = useMemo(() => {
@@ -69,12 +97,11 @@ const ServiceItem = ({ service, isAuthenticated, barbershop }: ServiceItemProps)
                   currency: "BRL",
                 }).format(Number(service.price))}
               </p>
-              
               <Sheet>
-                <SheetTrigger>
-                <Button variant="secondary" onClick={handleBookingClick}>
-                Reservar
-              </Button>
+                <SheetTrigger asChild>
+                  <Button variant="secondary" onClick={handleBookingClick}>
+                    Reservar
+                  </Button>
                 </SheetTrigger>
 
                 <SheetContent className="p-0">
@@ -82,53 +109,52 @@ const ServiceItem = ({ service, isAuthenticated, barbershop }: ServiceItemProps)
                     <SheetTitle>Fazer Reserva</SheetTitle>
                   </SheetHeader>
 
-                  <div className="py-6 ">
-                  <Calendar
-                    mode="single"
-                    selected={date}
-                    onSelect={handleDateClick}
-                    locale={ptBR}
-                    className="mt-6"
-                    fromDate={new Date()}
-                    styles={{
-                      head_cell: {
-                        width: "100%",
-                        textTransform: "capitalize",
-                      },
-                      cell: {
-                        width: "100%",
-                      },
-                      button: {
-                        width: "100%",
-                      },
-                      nav_button_previous: {
-                        width: "32px",
-                        height: "32px"
-                      },
-                      nav_button_next: {
-                        width: "32px",
-                        height: "32px"
-                      },
-                      caption: {
-                        textTransform: "capitalize"
-                      }
-                    }}
-                  />
+                  <div className="py-6">
+                    <Calendar
+                      mode="single"
+                      selected={date}
+                      onSelect={handleDateClick}
+                      locale={ptBR}
+                      fromDate={new Date()}
+                      styles={{
+                        head_cell: {
+                          width: "100%",
+                          textTransform: "capitalize",
+                        },
+                        cell: {
+                          width: "100%",
+                        },
+                        button: {
+                          width: "100%",
+                        },
+                        nav_button_previous: {
+                          width: "32px",
+                          height: "32px",
+                        },
+                        nav_button_next: {
+                          width: "32px",
+                          height: "32px",
+                        },
+                        caption: {
+                          textTransform: "capitalize",
+                        },
+                      }}
+                    />
                   </div>
 
-                  {/* Mostrar lista de horários apenas se alguma data estiver selecionada  */}
-
+                  {/* Mostrar lista de horários apenas se alguma data estiver selecionada */}
                   {date && (
-                    <div className="gap-3 flex overflow-x-auto py-6 px-5 border-t border-solid border-secondary [&::-webkit-scrollbar]:hidden">
+                    <div className="flex gap-3 overflow-x-auto py-6 px-5 border-t border-solid border-secondary [&::-webkit-scrollbar]:hidden">
                       {timeList.map((time) => (
-                        <Button 
-                        onClick={() => handleHourClick(time)}
-                        className="rounded-full"
-                        variant={
-                          hour == time ? 'default' : 'outline'} 
-                        key={time}>{time}</Button>
+                        <Button
+                          onClick={() => handleHourClick(time)}
+                          variant={hour === time ? "default" : "outline"}
+                          className="rounded-full"
+                          key={time}
+                        >
+                          {time}
+                        </Button>
                       ))}
-
                     </div>
                   )}
 
@@ -137,39 +163,46 @@ const ServiceItem = ({ service, isAuthenticated, barbershop }: ServiceItemProps)
                       <CardContent className="p-3 gap-3 flex flex-col">
                         <div className="flex justify-between">
                           <h2 className="font-bold">{service.name}</h2>
-                          <h3 className="font-bold text-sm">{" "} {Intl.NumberFormat("pt-BR", {
-                            style: "currency",
-                            currency: "BRL",
-                          }).format(Number(service.price))}</h3>
+                          <h3 className="font-bold text-sm">
+                            {" "}
+                            {Intl.NumberFormat("pt-BR", {
+                              style: "currency",
+                              currency: "BRL",
+                            }).format(Number(service.price))}
+                          </h3>
                         </div>
 
                         {date && (
                           <div className="flex justify-between">
                             <h3 className="text-gray-400 text-sm">Data</h3>
-                            <h4 className=" text-sm capitalize">
+                            <h4 className="text-sm">
                               {format(date, "dd 'de' MMMM", {
-                              locale: ptBR,
-                            })}</h4>
+                                locale: ptBR,
+                              })}
+                            </h4>
                           </div>
                         )}
 
                         {hour && (
                           <div className="flex justify-between">
                             <h3 className="text-gray-400 text-sm">Horário</h3>
-                            <h4 className=" text-sm capitalize">{hour}</h4>
+                            <h4 className="text-sm">{hour}</h4>
                           </div>
                         )}
 
-                          <div className="flex justify-between">
-                            <h3 className="text-gray-400 text-sm">Barbearia</h3>
-                            <h4 className=" text-sm capitalize">{barbershop.name}</h4>
-                          </div>
-
+                        <div className="flex justify-between">
+                          <h3 className="text-gray-400 text-sm">Barbearia</h3>
+                          <h4 className="text-sm">{barbershop.name}</h4>
+                        </div>
                       </CardContent>
                     </Card>
                   </div>
+
                   <SheetFooter className="px-5">
-                      <Button disabled={!hour || !date}>Confirmar Reserva</Button>
+                    <Button onClick={handleBookingSubmit} disabled={!hour || !date || submitIsLoading}>
+                      {submitIsLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Confirmar reserva
+                    </Button>
                   </SheetFooter>
                 </SheetContent>
               </Sheet>
